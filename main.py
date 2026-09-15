@@ -8,7 +8,7 @@ from schemas import IncidentInput
 app = FastAPI(
     title="Intelligent Incident Triage API",
     description="API para la recepción y triaje automatizado de incidencias con LangGraph y LLM.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 # Configuración de CORS
@@ -39,13 +39,18 @@ async def submit_incident_form(
 ):
     """
     Recibe los datos del formulario (application/x-www-form-urlencoded o multipart/form-data)
-    y ejecuta el grafo de triaje orquestado con LangGraph.
+    y ejecuta el flujo condicional de triaje en LangGraph.
     """
     initial_state = {
-        "titulo": titulo,
-        "descripcion": descripcion,
-        "usuario": usuario,
-        "analisis": None,
+        "texto_original": {
+            "titulo": titulo,
+            "descripcion": descripcion,
+            "usuario": usuario,
+        },
+        "triage_data": None,
+        "alert_sent": False,
+        "rag_context": None,
+        "final_response": None,
         "error": None,
     }
 
@@ -63,14 +68,13 @@ async def submit_incident_form(
         )
 
     return {
-        "message": "Incidente procesado y clasificado exitosamente por el primer nodo",
-        "data": {
-            "titulo": titulo,
-            "descripcion": descripcion,
-            "usuario": usuario,
-        },
-        "analisis": result_state.get("analisis"),
-        "status": "classified",
+        "message": "Incidente procesado exitosamente por el flujo de triaje",
+        "texto_original": result_state.get("texto_original"),
+        "triage_data": result_state.get("triage_data"),
+        "alert_sent": result_state.get("alert_sent", False),
+        "rag_context": result_state.get("rag_context"),
+        "final_response": result_state.get("final_response"),
+        "status": "processed",
     }
 
 
@@ -81,13 +85,14 @@ async def submit_incident_form(
 )
 async def submit_incident_json(payload: IncidentInput):
     """
-    Alternativa para recibir payload JSON (application/json) y ejecutar el grafo de triaje.
+    Alternativa para recibir payload JSON (application/json) y ejecutar el flujo condicional en LangGraph.
     """
     initial_state = {
-        "titulo": payload.titulo,
-        "descripcion": payload.descripcion,
-        "usuario": payload.usuario,
-        "analisis": None,
+        "texto_original": payload.model_dump(),
+        "triage_data": None,
+        "alert_sent": False,
+        "rag_context": None,
+        "final_response": None,
         "error": None,
     }
 
@@ -105,8 +110,11 @@ async def submit_incident_json(payload: IncidentInput):
         )
 
     return {
-        "message": "Incidente en formato JSON procesado y clasificado exitosamente por el primer nodo",
-        "data": payload.model_dump(),
-        "analisis": result_state.get("analisis"),
-        "status": "classified",
+        "message": "Incidente en formato JSON procesado exitosamente por el flujo de triaje",
+        "texto_original": result_state.get("texto_original"),
+        "triage_data": result_state.get("triage_data"),
+        "alert_sent": result_state.get("alert_sent", False),
+        "rag_context": result_state.get("rag_context"),
+        "final_response": result_state.get("final_response"),
+        "status": "processed",
     }

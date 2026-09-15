@@ -48,11 +48,12 @@ CRITERIOS DE CLASIFICACIÓN:
 def classify_incident(state: IncidentGraphState) -> dict:
     """
     Primer nodo del grafo: analiza los datos del incidente con un LLM y
-    devuelve la clasificación estructurada.
+    devuelve la clasificación estructurada en triage_data.
     """
-    titulo = state.get("titulo", "")
-    descripcion = state.get("descripcion", "")
-    usuario = state.get("usuario", "")
+    texto_orig = state.get("texto_original") or {}
+    titulo = texto_orig.get("titulo") or state.get("titulo", "")
+    descripcion = texto_orig.get("descripcion") or state.get("descripcion", "")
+    usuario = texto_orig.get("usuario") or state.get("usuario", "")
 
     user_prompt = f"""Analiza el siguiente reporte de incidente:
 
@@ -80,4 +81,7 @@ Devuelve la clasificación estructurada según los criterios establecidos.
     analysis.prioridad = prioridad_calculada
     analysis.sla_horas = sla_calculado
 
-    return {"analisis": analysis, "error": None}
+    return {
+        "triage_data": analysis,
+        "error": None,
+    }

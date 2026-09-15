@@ -19,7 +19,7 @@ def sample_analysis():
         urgencia=UrgenciaEnum.MEDIA,
         prioridad=PriorityEnum.P4,
         sla_horas=48,
-        resumen_ejecutivo="Usuario bloqueado por contraseña expirada en el directorio activo.",
+        resumen_ejecutivo="Usuario bloqueado por contraseña expirada.",
         requiere_rag=True,
     )
 
@@ -43,10 +43,11 @@ async def test_submit_incident_form(sample_analysis):
     }
 
     mock_result_state = {
-        "titulo": form_data["titulo"],
-        "descripcion": form_data["descripcion"],
-        "usuario": form_data["usuario"],
-        "analisis": sample_analysis,
+        "texto_original": form_data,
+        "triage_data": sample_analysis,
+        "alert_sent": False,
+        "rag_context": ["Fragmento 1: Manual de contraseñas", "Fragmento 2: Autoservicio VPN"],
+        "final_response": "Solución sugerida: ingrese a portal de autoservicio.",
         "error": None,
     }
 
@@ -60,13 +61,14 @@ async def test_submit_incident_form(sample_analysis):
 
     assert response.status_code == 201
     json_resp = response.json()
-    assert json_resp["status"] == "classified"
-    assert json_resp["data"]["titulo"] == form_data["titulo"]
-    assert json_resp["data"]["usuario"] == form_data["usuario"]
-    assert json_resp["analisis"]["categoria"] == "ACCESOS_Y_SEGURIDAD"
-    assert json_resp["analisis"]["prioridad"] == "P4"
-    assert json_resp["analisis"]["sla_horas"] == 48
-    assert json_resp["analisis"]["requiere_rag"] is True
+    assert json_resp["status"] == "processed"
+    assert json_resp["texto_original"]["titulo"] == form_data["titulo"]
+    assert json_resp["texto_original"]["usuario"] == form_data["usuario"]
+    assert json_resp["triage_data"]["categoria"] == "ACCESOS_Y_SEGURIDAD"
+    assert json_resp["triage_data"]["prioridad"] == "P4"
+    assert json_resp["alert_sent"] is False
+    assert len(json_resp["rag_context"]) == 2
+    assert "Solución sugerida" in json_resp["final_response"]
 
 
 @pytest.mark.anyio
@@ -87,16 +89,17 @@ async def test_submit_incident_form_missing_field():
 @pytest.mark.anyio
 async def test_submit_incident_json(sample_analysis):
     json_data = {
-        "titulo": "Duda sobre exportación a Excel",
-        "descripcion": "¿Existe algún manual para exportar las facturas a formato xlsx?",
-        "usuario": "carlos_finanzas",
+        "titulo": "Pasarela de pagos caída",
+        "descripcion": "Error crítico al procesar tarjetas de crédito.",
+        "usuario": "admin_checkout",
     }
 
     mock_result_state = {
-        "titulo": json_data["titulo"],
-        "descripcion": json_data["descripcion"],
-        "usuario": json_data["usuario"],
-        "analisis": sample_analysis,
+        "texto_original": json_data,
+        "triage_data": sample_analysis,
+        "alert_sent": True,
+        "rag_context": None,
+        "final_response": "🚨 ALERTA P1: Pasarela de pagos caída. SLA: 2 horas. Responsable: Turno de guardia.",
         "error": None,
     }
 
@@ -110,6 +113,7 @@ async def test_submit_incident_json(sample_analysis):
 
     assert response.status_code == 201
     json_resp = response.json()
-    assert json_resp["status"] == "classified"
-    assert json_resp["data"] == json_data
-    assert json_resp["analisis"]["categoria"] == "ACCESOS_Y_SEGURIDAD"
+    assert json_resp["status"] == "processed"
+    assert json_resp["texto_original"] == json_data
+    assert json_resp["alert_sent"] is True
+    assert "🚨 ALERTA P1" in json_resp["final_response"]
