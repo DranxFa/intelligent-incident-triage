@@ -25,13 +25,16 @@ def persist_incident_and_state(state: IncidentGraphState) -> Optional[int]:
     alert_sent = state.get("alert_sent", False)
     rag_context = state.get("rag_context")
 
-    # Determinar estado del ciclo de vida del ticket
+    # Determinar acción tomada por la IA (triaje)
     if alert_sent:
-        estado = "ALERTA_ENVIADA"
+        accion_ia = "ALERTA_P1"
     elif rag_context:
-        estado = "SUGERENCIA_GENERADA"
+        accion_ia = "SUGERENCIA_RAG"
     else:
-        estado = "ABIERTO"
+        accion_ia = "COLA_REGULAR"
+
+    # Todo ticket recién ingresado al sistema inicia en estado ABIERTO
+    estado = "ABIERTO"
 
     try:
         # Calcular vector embedding del problema para búsqueda y analítica semántica
@@ -47,7 +50,9 @@ def persist_incident_and_state(state: IncidentGraphState) -> Optional[int]:
                 prioridad=prioridad,
                 sla_horas=sla_horas,
                 categoria=categoria,
+                accion_ia=accion_ia,
                 estado=estado,
+                resolved_at=None,
                 tiempo_resolucion=None,
                 solucion_sugerida=solucion_sugerida,
                 vector_embedding=incident_vector,

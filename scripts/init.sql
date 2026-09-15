@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS incidents (
     prioridad VARCHAR(10) NOT NULL,
     sla_horas INT NOT NULL,
     categoria VARCHAR(100) NOT NULL,
+    accion_ia VARCHAR(50) NOT NULL DEFAULT 'COLA_REGULAR',
     estado VARCHAR(50) NOT NULL DEFAULT 'ABIERTO',
+    resolved_at TIMESTAMPTZ DEFAULT NULL,
     tiempo_resolucion INT DEFAULT NULL,
     solucion_sugerida TEXT DEFAULT NULL,
     vector_embedding vector(768) DEFAULT NULL
@@ -33,6 +35,7 @@ CREATE TABLE IF NOT EXISTS incidents (
 -- Índices para optimizar filtros en Power BI
 CREATE INDEX IF NOT EXISTS idx_incidents_prioridad ON incidents(prioridad);
 CREATE INDEX IF NOT EXISTS idx_incidents_categoria ON incidents(categoria);
+CREATE INDEX IF NOT EXISTS idx_incidents_accion_ia ON incidents(accion_ia);
 CREATE INDEX IF NOT EXISTS idx_incidents_estado ON incidents(estado);
 CREATE INDEX IF NOT EXISTS idx_incidents_created_at ON incidents(created_at);
 

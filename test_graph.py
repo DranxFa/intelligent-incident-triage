@@ -136,7 +136,7 @@ async def test_workflow_ruta_a_p1_alert():
 
     with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
         "graph.nodes.persist.persist_incident_and_state", return_value=101
-    ):
+    ), patch("graph.nodes.alert.httpx.post") as mock_http, patch("graph.nodes.alert.smtplib.SMTP"):
         state_input = {
             "texto_original": {
                 "titulo": "Pasarela de pagos caída",

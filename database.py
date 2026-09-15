@@ -65,8 +65,10 @@ class Incident(Base):
     prioridad = Column(String(10), nullable=False)
     sla_horas = Column(Integer, nullable=False)
     categoria = Column(String(100), nullable=False)
-    estado = Column(String(50), nullable=False, default="ABIERTO")
-    tiempo_resolucion = Column(Integer, nullable=True)
+    accion_ia = Column(String(50), nullable=False, default="COLA_REGULAR")  # ALERTA_P1, SUGERENCIA_RAG, COLA_REGULAR
+    estado = Column(String(50), nullable=False, default="ABIERTO")  # ABIERTO, EN_PROCESO, RESUELTO
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    tiempo_resolucion = Column(Integer, nullable=True)  # Tiempo de resolución en minutos
     solucion_sugerida = Column(Text, nullable=True)
     vector_embedding = Column(Vector(768), nullable=True)
 
