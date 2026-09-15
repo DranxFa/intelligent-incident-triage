@@ -7,8 +7,8 @@ from schemas import IncidentInput
 
 app = FastAPI(
     title="Intelligent Incident Triage API",
-    description="API para la recepción y triaje automatizado de incidencias con LangGraph y LLM.",
-    version="0.3.0",
+    description="API para la recepción, triaje con LangGraph y persistencia en PostgreSQL con pgvector.",
+    version="0.4.0",
 )
 
 # Configuración de CORS
@@ -24,13 +24,13 @@ app.add_middleware(
 @app.get("/", summary="Verificar estado del servicio")
 async def health_check():
     """Ruta raíz para verificar que el servicio está activo."""
-    return {"status": "ok", "message": "API de triage de incidentes lista con LangGraph"}
+    return {"status": "ok", "message": "API de triage de incidentes lista con LangGraph y persistencia"}
 
 
 @app.post(
     "/incidents",
     status_code=status.HTTP_201_CREATED,
-    summary="Recibir formulario de incidente (Form Data) y procesar con LangGraph",
+    summary="Recibir formulario de incidente (Form Data), procesar y persistir",
 )
 async def submit_incident_form(
     titulo: Annotated[str, Form(..., description="Título del incidente")],
@@ -38,8 +38,8 @@ async def submit_incident_form(
     usuario: Annotated[str, Form(..., description="Usuario que reporta")],
 ):
     """
-    Recibe los datos del formulario (application/x-www-form-urlencoded o multipart/form-data)
-    y ejecuta el flujo condicional de triaje en LangGraph.
+    Recibe los datos del formulario (application/x-www-form-urlencoded o multipart/form-data),
+    ejecuta el flujo condicional de triaje en LangGraph y persiste el resultado en PostgreSQL.
     """
     initial_state = {
         "texto_original": {
@@ -51,6 +51,7 @@ async def submit_incident_form(
         "alert_sent": False,
         "rag_context": None,
         "final_response": None,
+        "incident_id": None,
         "error": None,
     }
 
@@ -68,7 +69,8 @@ async def submit_incident_form(
         )
 
     return {
-        "message": "Incidente procesado exitosamente por el flujo de triaje",
+        "message": "Incidente procesado y persistido exitosamente por el flujo de triaje",
+        "ticket_id": result_state.get("incident_id"),
         "texto_original": result_state.get("texto_original"),
         "triage_data": result_state.get("triage_data"),
         "alert_sent": result_state.get("alert_sent", False),
@@ -81,11 +83,12 @@ async def submit_incident_form(
 @app.post(
     "/incidents/json",
     status_code=status.HTTP_201_CREATED,
-    summary="Recibir incidente en formato JSON y procesar con LangGraph",
+    summary="Recibir incidente en formato JSON, procesar y persistir",
 )
 async def submit_incident_json(payload: IncidentInput):
     """
-    Alternativa para recibir payload JSON (application/json) y ejecutar el flujo condicional en LangGraph.
+    Alternativa para recibir payload JSON (application/json), ejecutar el flujo condicional
+    y persistir en la base de datos PostgreSQL.
     """
     initial_state = {
         "texto_original": payload.model_dump(),
@@ -93,6 +96,7 @@ async def submit_incident_json(payload: IncidentInput):
         "alert_sent": False,
         "rag_context": None,
         "final_response": None,
+        "incident_id": None,
         "error": None,
     }
 
@@ -110,7 +114,8 @@ async def submit_incident_json(payload: IncidentInput):
         )
 
     return {
-        "message": "Incidente en formato JSON procesado exitosamente por el flujo de triaje",
+        "message": "Incidente en formato JSON procesado y persistido exitosamente",
+        "ticket_id": result_state.get("incident_id"),
         "texto_original": result_state.get("texto_original"),
         "triage_data": result_state.get("triage_data"),
         "alert_sent": result_state.get("alert_sent", False),

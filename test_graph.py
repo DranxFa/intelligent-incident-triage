@@ -134,7 +134,9 @@ async def test_workflow_ruta_a_p1_alert():
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value = mock_structured_llm
 
-    with patch("graph.nodes.classifier.get_llm", return_value=mock_llm):
+    with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
+        "graph.nodes.persist.persist_incident_and_state", return_value=101
+    ):
         state_input = {
             "texto_original": {
                 "titulo": "Pasarela de pagos caída",
@@ -145,6 +147,7 @@ async def test_workflow_ruta_a_p1_alert():
             "alert_sent": False,
             "rag_context": None,
             "final_response": None,
+            "incident_id": None,
             "error": None,
         }
 
@@ -156,6 +159,7 @@ async def test_workflow_ruta_a_p1_alert():
         assert result["rag_context"] is None
         assert "🚨 ALERTA P1" in result["final_response"]
         assert "SLA: 2 horas" in result["final_response"]
+        assert result["incident_id"] == 101
 
 
 @pytest.mark.anyio
@@ -181,8 +185,17 @@ async def test_workflow_ruta_b_rag():
     mock_llm.with_structured_output.return_value = mock_structured_llm
     mock_llm.invoke.return_value = mock_rag_response
 
+    mock_fragments = [
+        "Manual: Procedimiento ERP Facturación y Reportes [SOFTWARE_APLICACIONES]\nExportar reportes.",
+        "Manual: Guía de exportación [CONSULTA_OPERATIVA]\nPaso a paso.",
+    ]
+
     with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
         "graph.nodes.rag.get_llm", return_value=mock_llm
+    ), patch(
+        "graph.nodes.rag.search_manuals_vector", return_value=mock_fragments
+    ), patch(
+        "graph.nodes.persist.persist_incident_and_state", return_value=102
     ):
         state_input = {
             "texto_original": {
@@ -194,6 +207,7 @@ async def test_workflow_ruta_b_rag():
             "alert_sent": False,
             "rag_context": None,
             "final_response": None,
+            "incident_id": None,
             "error": None,
         }
 
@@ -204,6 +218,7 @@ async def test_workflow_ruta_b_rag():
         assert result["rag_context"] is not None
         assert len(result["rag_context"]) == 2
         assert "Para exportar a Excel" in result["final_response"]
+        assert result["incident_id"] == 102
 
 
 @pytest.mark.anyio
@@ -225,7 +240,9 @@ async def test_workflow_ruta_c_regular_queue():
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value = mock_structured_llm
 
-    with patch("graph.nodes.classifier.get_llm", return_value=mock_llm):
+    with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
+        "graph.nodes.persist.persist_incident_and_state", return_value=103
+    ):
         state_input = {
             "texto_original": {
                 "titulo": "Bug visual en CRM",
@@ -236,6 +253,7 @@ async def test_workflow_ruta_c_regular_queue():
             "alert_sent": False,
             "rag_context": None,
             "final_response": None,
+            "incident_id": None,
             "error": None,
         }
 
@@ -245,3 +263,4 @@ async def test_workflow_ruta_c_regular_queue():
         assert result["alert_sent"] is False
         assert result["rag_context"] is None
         assert "cola de atención regular" in result["final_response"]
+        assert result["incident_id"] == 103

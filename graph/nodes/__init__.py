@@ -1,5 +1,6 @@
 from graph.nodes.alert import send_p1_alert
 from graph.nodes.classifier import classify_incident
+from graph.nodes.persist import persist_ticket
 from graph.nodes.queue import regular_queue
 from graph.nodes.rag import rag_manual_resolver
 
@@ -8,4 +9,5 @@ __all__ = [
     "send_p1_alert",
     "rag_manual_resolver",
     "regular_queue",
+    "persist_ticket",
 ]

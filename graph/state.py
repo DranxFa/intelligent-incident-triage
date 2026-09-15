@@ -14,4 +14,5 @@ class IncidentGraphState(TypedDict):
     alert_sent: bool  # Indica si se envió alerta (Ruta A)
     rag_context: Optional[List[str]]  # Fragmentos recuperados de manuales (Ruta B)
     final_response: Optional[str]  # Respuesta final, solución sugerida o estado de registro
+    incident_id: Optional[int]  # ID numérico persistido en PostgreSQL (tabla incidents)
     error: Optional[str]  # Mensaje de error en caso de anomalía

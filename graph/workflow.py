@@ -1,6 +1,7 @@
 from langgraph.graph import END, START, StateGraph
 from graph.nodes.alert import send_p1_alert
 from graph.nodes.classifier import classify_incident
+from graph.nodes.persist import persist_ticket
 from graph.nodes.queue import regular_queue
 from graph.nodes.rag import rag_manual_resolver
 from graph.state import IncidentGraphState
@@ -38,6 +39,7 @@ def create_incident_workflow():
         * Ruta A: send_p1_alert
         * Ruta B: rag_manual_resolver
         * Ruta C: regular_queue
+    - Nodo Final: persist_ticket (guarda en tabla 'incidents' y 'incident_states' en PostgreSQL)
     """
     workflow = StateGraph(IncidentGraphState)
 
@@ -46,6 +48,7 @@ def create_incident_workflow():
     workflow.add_node("send_p1_alert", send_p1_alert)
     workflow.add_node("rag_manual_resolver", rag_manual_resolver)
     workflow.add_node("regular_queue", regular_queue)
+    workflow.add_node("persist_ticket", persist_ticket)
 
     # 2. Transición inicial
     workflow.add_edge(START, "classify_incident")
@@ -61,10 +64,13 @@ def create_incident_workflow():
         },
     )
 
-    # 4. Transiciones hacia el fin del grafo
-    workflow.add_edge("send_p1_alert", END)
-    workflow.add_edge("rag_manual_resolver", END)
-    workflow.add_edge("regular_queue", END)
+    # 4. Todas las ramas convergen en el nodo de persistencia antes de finalizar
+    workflow.add_edge("send_p1_alert", "persist_ticket")
+    workflow.add_edge("rag_manual_resolver", "persist_ticket")
+    workflow.add_edge("regular_queue", "persist_ticket")
+
+    # 5. Fin del flujo
+    workflow.add_edge("persist_ticket", END)
 
     return workflow.compile()
 
