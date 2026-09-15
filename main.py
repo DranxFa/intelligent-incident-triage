@@ -1,15 +1,17 @@
 from typing import Annotated
-from fastapi import FastAPI, Form, status
+from fastapi import FastAPI, Form, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+
+from graph import triage_graph
+from schemas import IncidentInput
 
 app = FastAPI(
     title="Intelligent Incident Triage API",
-    description="API inicial para la recepción de incidencias mediante formulario.",
-    version="0.1.0",
+    description="API para la recepción y triaje automatizado de incidencias con LangGraph y LLM.",
+    version="0.2.0",
 )
 
-# Configuración de CORS para permitir peticiones desde clientes web locales
+# Configuración de CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,22 +21,16 @@ app.add_middleware(
 )
 
 
-class IncidentSchema(BaseModel):
-    titulo: str = Field(..., min_length=1, description="Título del incidente")
-    descripcion: str = Field(..., min_length=1, description="Descripción detallada del incidente")
-    usuario: str = Field(..., min_length=1, description="Usuario que reporta el incidente")
-
-
 @app.get("/", summary="Verificar estado del servicio")
 async def health_check():
     """Ruta raíz para verificar que el servicio está activo."""
-    return {"status": "ok", "message": "API de triage de incidentes lista"}
+    return {"status": "ok", "message": "API de triage de incidentes lista con LangGraph"}
 
 
 @app.post(
     "/incidents",
     status_code=status.HTTP_201_CREATED,
-    summary="Recibir formulario de incidente (Form Data)",
+    summary="Recibir formulario de incidente (Form Data) y procesar con LangGraph",
 )
 async def submit_incident_form(
     titulo: Annotated[str, Form(..., description="Título del incidente")],
@@ -42,31 +38,75 @@ async def submit_incident_form(
     usuario: Annotated[str, Form(..., description="Usuario que reporta")],
 ):
     """
-    Recibe los datos del formulario enviados mediante `application/x-www-form-urlencoded`
-    o `multipart/form-data`.
+    Recibe los datos del formulario (application/x-www-form-urlencoded o multipart/form-data)
+    y ejecuta el grafo de triaje orquestado con LangGraph.
     """
+    initial_state = {
+        "titulo": titulo,
+        "descripcion": descripcion,
+        "usuario": usuario,
+        "analisis": None,
+        "error": None,
+    }
+
+    try:
+        result_state = await triage_graph.ainvoke(initial_state)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Error en configuración de LLM: {str(val_err)}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Falla durante la orquestación del triaje: {str(exc)}",
+        )
+
     return {
-        "message": "Formulario recibido correctamente",
+        "message": "Incidente procesado y clasificado exitosamente por el primer nodo",
         "data": {
             "titulo": titulo,
             "descripcion": descripcion,
             "usuario": usuario,
         },
-        "status": "received",
+        "analisis": result_state.get("analisis"),
+        "status": "classified",
     }
 
 
 @app.post(
     "/incidents/json",
     status_code=status.HTTP_201_CREATED,
-    summary="Recibir incidente en formato JSON",
+    summary="Recibir incidente en formato JSON y procesar con LangGraph",
 )
-async def submit_incident_json(payload: IncidentSchema):
+async def submit_incident_json(payload: IncidentInput):
     """
-    Alternativa para clientes API que envíen el formulario en formato JSON (`application/json`).
+    Alternativa para recibir payload JSON (application/json) y ejecutar el grafo de triaje.
     """
+    initial_state = {
+        "titulo": payload.titulo,
+        "descripcion": payload.descripcion,
+        "usuario": payload.usuario,
+        "analisis": None,
+        "error": None,
+    }
+
+    try:
+        result_state = await triage_graph.ainvoke(initial_state)
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Error en configuración de LLM: {str(val_err)}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Falla durante la orquestación del triaje: {str(exc)}",
+        )
+
     return {
-        "message": "Datos en formato JSON recibidos correctamente",
+        "message": "Incidente en formato JSON procesado y clasificado exitosamente por el primer nodo",
         "data": payload.model_dump(),
-        "status": "received",
+        "analisis": result_state.get("analisis"),
+        "status": "classified",
     }
