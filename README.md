@@ -1,121 +1,219 @@
-# Intelligent Incident Triage
+# 📃 Intelligent Incident Triage & Operational Copilot 🚨🤖
 
-API desarrollada con FastAPI y orquestada con **LangGraph** para el triaje inteligente automatizado de incidencias de TI mediante LLMs (Google Gemini / Groq), enrutamiento condicional y persistencia en **PostgreSQL con pgvector** para reportería en **Power BI**.
+<p align="center">
+  <img width="800" alt="Arquitectura del Sistema" src="docs/arquitectura_sistema.png" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/STATUS-Terminado-green?style=for-the-badge"> &nbsp;
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=Python&logoColor=white" alt="Python"> &nbsp;
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=FastAPI&logoColor=white" alt="FastAPI"> &nbsp;
+  <img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=for-the-badge&logo=LangChain&logoColor=white" alt="LangGraph"> &nbsp;
+  <img src="https://img.shields.io/badge/Google_Gemini-8E75C2?style=for-the-badge&logo=Google%20Gemini&logoColor=white" alt="Google Gemini"> &nbsp;
+  <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=PostgreSQL&logoColor=white" alt="PostgreSQL"> &nbsp;
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=Docker&logoColor=white" alt="Docker"> &nbsp;
+  <img src="https://img.shields.io/badge/Power_BI-F2C811?style=for-the-badge&logo=Power%20BI&logoColor=black" alt="Power BI"> &nbsp;
+</p>
+
+## 📝 Descripción del Proyecto
+
+Sistema de triaje inteligente y copiloto operacional para mesas de ayuda de soporte TI. Automatiza la recepción de solicitudes, clasificación estructurada, cálculo matemático de acuerdos de nivel de servicio SLA, recuperación semántica de manuales técnicos institucionales mediante RAG y despacho multicanal de alertas críticas.
+
+La solución almacena los registros operativos en PostgreSQL con soporte vectorial mediante pgvector y se conecta con un modelo analítico en Power BI para supervisar tiempos medios de resolución, cumplimiento de metas de atención y tasa de autoatención.
 
 ---
 
-## Estructura del Proyecto
+## 🏛️ Arquitectura del Sistema
+
+```
+[ Usuario / API ] ──► [ FastAPI Gateway ] ──► [ Orquestador LangGraph ]
+                                                      │
+         ┌───────────────────┬────────────────────────┴────────────────────────┐
+         ▼                   ▼                                                 ▼
+   [ Ruta A: P1 ]     [ Ruta B: RAG ]                                  [ Ruta C: Regular ]
+         │                   │                                                 │
+  BackgroundTasks     pgvector Search (<= 0.38)                          Cola Regular
+  Discord / Telegram  ├─ Match ──► Solución Guiada                             │
+  Outlook SMTP        └─ No Match ─► Escala a Humano                           │
+         │                   │                                                 │
+         └───────────────────┴────────────────────────┬────────────────────────┘
+                                                      ▼
+                                       [ PostgreSQL + pgvector ]
+                                                      │
+                                                      ▼
+                                            [ Power BI Dashboard ]
+```
+
+El flujo técnico integra componentes especializados:
+
+* **FastAPI Gateway:** Expone endpoints asíncronos para formularios web y consumo vía JSON, respondiendo confirmaciones inmediatas con el identificador del ticket.
+* **Orquestador LangGraph:** Ejecuta el estado compartido tipado y procesa en paralelo la clasificación estructurada con el modelo de lenguaje y el cálculo del vector embedding de 768 dimensiones.
+* **PostgreSQL con pgvector:** Almacena tablas operativas para reportería, estados técnicos del grafo y manuales vectorizados con índice HNSW para acelerar búsquedas por distancia coseno.
+* **Notificaciones en Segundo Plano:** Envía alertas de emergencias críticas a Discord Webhooks, Telegram Bot API y servidores SMTP empresariales sin demorar la respuesta al usuario.
+* **Power BI Dashboard:** Modelo analítico conectado directamente a la base de datos para medir indicadores de gestión y detectar oportunidades de automatización.
+
+---
+
+## 🔄 Modelado de Procesos BPMN 2.0
+
+### Proceso Actual AS-IS
+
+Operación manual tradicional caracterizada por demoras de triaje en bandejas compartidas, criterios subjetivos de asignación de prioridad, llamadas telefónicas manuales ante caídas críticas y saturación de analistas con consultas repetitivas.
+
+<p align="center">
+  <img width="800" alt="BPMN AS-IS" src="docs/bpmn_as_is.png" />
+</p>
+
+### Proceso Propuesto TO-BE
+
+Flujo optimizado mediante un agente de IA que clasifica en milisegundos, despacha alertas críticas automáticamente, ofrece autoatención guiada con manuales institucionales y transfiere de forma segura a técnicos humanos solo cuando la consulta carece de documentación previa.
+
+<p align="center">
+  <img width="800" alt="BPMN TO-BE" src="docs/bpmn_to_be.png" />
+</p>
+
+---
+
+## ⚙️ Rutas de Decisión del Agente
+
+El agente evalúa el incidente y asigna deterministamente una de cuatro acciones operativas:
+
+| Acción IA | Criterio de Activación | Comportamiento del Sistema | Canal de Salida |
+| :--- | :--- | :--- | :--- |
+| **`ALERTA_P1`** | Impacto alto y urgencia alta | Prioridad P1 con SLA de 2 horas. Despacho asíncrono inmediato | Discord, Telegram y Correo |
+| **`SUGERENCIA_RAG`** | Consulta operativa o duda técnica | Coincidencia en pgvector con distancia coseno menor o igual a 0.38. Genera solución paso a paso | Interfaz de usuario |
+| **`ESCALADO_A_HUMANO`** | Consulta sin manual disponible | Distancia coseno mayor a 0.38. Evita alucinaciones y deriva a especialista | Cola de especialista |
+| **`COLA_REGULAR`** | Fallas estándar P2, P3 o P4 | Clasificación automática y asignación directa a la mesa de ayuda | Cola de atención N1/N2 |
+
+---
+
+## 📊 Dashboard Ejecutivo en Power BI
+
+Tablero analítico con relación directa a la tabla de incidentes en PostgreSQL estructurado en lienzo panorámico:
+
+<p align="center">
+  <img width="800" alt="Dashboard en Power BI" src="docs/dashboard_powerbi.png" />
+</p>
+
+### Métricas e Indicadores Clave:
+
+* **Total de Incidentes:** Volumen global de tickets procesados en el período analizado.
+* **Backlog Activo:** Cantidad de tickets abiertos y en proceso que requieren atención técnica.
+* **MTTR:** Tiempo medio de resolución calculado en horas sobre incidentes cerrados.
+* **Cumplimiento de SLA:** Porcentaje de tickets resueltos dentro del límite temporal establecido.
+* **Asistencia por IA:** Proporción de incidentes resueltos mediante manuales sugeridos por RAG sin consumo de horas técnicas.
+* **Distribución de Acciones de IA:** Gráfico circular que audita la repartición entre alertas críticas, consultas autoatendidas, casos derivados y soporte regular.
+
+---
+
+## 📁 Estructura del Proyecto
 
 ```
 intelligent-incident-triage/
+├── dashboard/               # Archivos y documentación del reporte Power BI
 ├── data/
-│   └── manuales_ti.md       # 10 manuales de soluciones de TI para la base de conocimiento
+│   └── manuales_ti.md       # 10 manuales institucionales base para pgvector
+├── docs/                    # Diagramas BPMN, arquitectura y capturas del dashboard
 ├── graph/                   # Orquestación con LangGraph
-│   ├── __init__.py          # Exporta triage_graph
-│   ├── state.py             # Estado tipado (IncidentGraphState)
-│   ├── llm.py               # Fábrica de modelos LLM (Gemini / Groq)
-│   ├── workflow.py          # StateGraph compilado con enrutador condicional y persistencia
+│   ├── llm.py               # Configuración de clientes LLM
+│   ├── state.py             # Definición del estado tipado IncidentGraphState
+│   ├── workflow.py          # Definición y compilación del StateGraph
 │   └── nodes/               # Nodos del flujo
-│       ├── __init__.py
-│       ├── classifier.py    # Nodo 1: Clasificación estructurada y SLA
-│       ├── alert.py         # Nodo 2A: Envío de alertas P1 (Discord/Telegram/Correo)
-│       ├── rag.py           # Nodo 2B: Búsqueda en manuales (pgvector) y solución sugerida
-│       ├── queue.py         # Nodo 2C: Preparación de cola de atención regular
-│       └── persist.py       # Nodo 3: Persistencia en PostgreSQL (Power BI y estados)
+│       ├── alert.py         # Nodo de alerta crítica y despacho multicanal
+│       ├── classifier.py    # Nodo de clasificación estructurada y embedding
+│       ├── persist.py       # Nodo de persistencia en base de datos
+│       ├── queue.py         # Nodo de derivación a cola regular
+│       └── rag.py           # Nodo de búsqueda semántica y fallback a humano
 ├── scripts/
-│   ├── init.sql             # Inicialización de extensiones, tablas e índices pgvector
-│   └── seed_manuals.py      # Script para generar embeddings y poblar knowledge_manuals
+│   ├── init.sql             # Esquema DDL de PostgreSQL con pgvector e índices
+│   ├── seed_bi_tickets.py   # Generador de 300 tickets normalizados para Power BI
+│   └── seed_manuals.py      # Script de vectorización de manuales técnicos
 ├── services/
-│   ├── embeddings.py        # Generador de embeddings (Gemini text-embedding-004 768d)
-│   ├── knowledge_service.py # Parseo de manuales y búsqueda por distancia coseno (<=>)
-│   └── incident_service.py  # Persistencia de incidentes (Power BI) y estados de LangGraph
-├── database.py              # Modelos ORM SQLAlchemy y gestión de conexiones
-├── schemas.py               # Enums, matriz 3x3 de prioridad y modelos Pydantic
-├── main.py                  # API FastAPI y endpoints
-├── test_graph.py            # Pruebas del grafo, enrutador y rutas A, B y C
-├── test_main.py             # Pruebas de endpoints FastAPI
-├── test_persistence.py     # Pruebas de base de conocimiento, embeddings y persistencia
-├── docker-compose.yml       # Contenedor PostgreSQL 16 con pgvector
-├── requirements.txt         # Dependencias del proyecto
-├── .env.example             # Plantilla de variables de entorno
-└── .gitignore               # Archivos ignorados por git
+│   ├── embeddings.py        # Generación de vectores con Google Gemini
+│   ├── incident_service.py  # Servicios de persistencia de tickets y estados
+│   └── knowledge_service.py # Servicios de búsqueda vectorial por distancia coseno
+├── database.py              # Modelos ORM SQLAlchemy y motor de conexiones
+├── docker-compose.yml       # Contenedor Docker de PostgreSQL 16 con pgvector
+├── main.py                  # API REST construida con FastAPI
+├── schemas.py               # Esquemas Pydantic y matriz matemática 3x3 de SLA
+├── requirements.txt         # Librerías de Python requeridas
+└── test_graph.py            # Suite de pruebas automatizadas con pytest
 ```
 
 ---
 
-## Modelos de Base de Datos (PostgreSQL + pgvector)
+## 🚀 Instalación y Despliegue Local
 
-### 1. `incidents` (Diseñada para Power BI y Reportería)
-- `id` (SERIAL PRIMARY KEY)
-- `created_at` (TIMESTAMPTZ)
-- `usuario` (VARCHAR)
-- `titulo` (VARCHAR)
-- `descripcion` (TEXT)
-- `prioridad` (VARCHAR: P1, P2, P3, P4)
-- `sla_horas` (INT: 2, 8, 24, 48)
-- `categoria` (VARCHAR: CategoryEnum)
-- `estado` (VARCHAR: ABIERTO, ALERTA_ENVIADA, SUGERENCIA_GENERADA)
-- `tiempo_resolucion` (INT)
-- `solucion_sugerida` (TEXT)
-- `vector_embedding` (vector(768))
+### 1. Clonar el repositorio y preparar el entorno
 
-### 2. `incident_states` (Historial Técnico del Grafo LangGraph)
-- `id` (SERIAL PRIMARY KEY)
-- `incident_id` (FOREIGN KEY REFERENCES incidents.id ON DELETE CASCADE)
-- `created_at` (TIMESTAMPTZ)
-- `texto_original` (JSONB)
-- `triage_data` (JSONB)
-- `alert_sent` (BOOLEAN)
-- `rag_context` (JSONB)
-- `final_response` (TEXT)
-- `error` (TEXT)
+```powershell
+git clone https://github.com/DranxFa/intelligent-incident-triage.git
+cd intelligent-incident-triage
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-### 3. `knowledge_manuals` (Base de Conocimiento TI)
-- `id` (SERIAL PRIMARY KEY)
-- `titulo` (VARCHAR)
-- `categoria` (VARCHAR)
-- `contenido` (TEXT)
-- `vector_embedding` (vector(768) con índice HNSW)
+### 2. Iniciar la base de datos con Docker
+
+```powershell
+docker compose up -d
+```
+
+### 3. Configurar variables de entorno
+
+Crear un archivo `.env` en la raíz tomando como referencia `.env.example`:
+
+```env
+DATABASE_URL=postgresql://admin:password123@localhost:5432/triage_db
+GEMINI_API_KEY=tu_api_key_aqui
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+TELEGRAM_BOT_TOKEN=tu_bot_token
+TELEGRAM_CHAT_ID=tu_chat_id
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=tu_correo@gmail.com
+SMTP_PASSWORD=tu_contraseña_de_aplicacion
+ALERT_EMAIL_TO=guardia@empresa.com
+```
+
+### 4. Inicializar base de conocimiento y datos analíticos
+
+```powershell
+# Vectorizar manuales institucionales en pgvector
+python scripts/seed_manuals.py --force
+
+# Poblar 300 tickets para análisis en Power BI
+python scripts/seed_bi_tickets.py --count 300
+```
+
+### 5. Iniciar el servidor API
+
+```powershell
+uvicorn main:app --reload --port 8000
+```
+
+Acceso a documentación interactiva OpenAPI Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
-## 10 Soluciones de TI Incluidas (`data/manuales_ti.md`)
+## 🧪 Pruebas Automatizadas
 
-1. Cómo reiniciar el servicio de base de datos PostgreSQL.
-2. Cómo solicitar accesos y licencias a SAP.
-3. Solución al error de impresora de red sin conexión (Offline).
-4. Desbloqueo de cuenta y reseteo de contraseña en Active Directory.
-5. Solución a fallas de conexión a la VPN corporativa.
-6. Diagnóstico y recuperación ante pantallas azules (BSOD) en Windows.
-7. Reparación de sincronización y perfiles dañados en Microsoft Outlook.
-8. Solución a errores 500 y 502 Bad Gateway en aplicaciones web internas.
-9. Configuración de micrófono y cámara en Microsoft Teams / Zoom.
-10. Diagnóstico y reporte de lentitud o saturación en la red de oficina.
+El proyecto cuenta con 14 pruebas unitarias y de integración que validan la matriz de prioridad, el enrutador condicional, las alertas simuladas, el fallback de RAG y los endpoints de FastAPI:
+
+```powershell
+pytest -v
+```
 
 ---
 
-## Puesta en Marcha Rápida
+## 👤 Autor
 
-1. **Iniciar PostgreSQL con pgvector en Docker**:
-   ```powershell
-   docker compose up -d
-   ```
+| [<img src="https://github.com/user-attachments/assets/ed62fad0-2a7e-4029-8525-2eec5c620be3" width="155"><br><sub>Andrio Contreras</sub>](https://github.com/DranxFa) |
+| :---: |
 
-2. **Configurar tu `.env`**:
-   Asegúrate de colocar tu `GEMINI_API_KEY` en el archivo `.env`.
+---
 
-3. **Poblar la base de conocimiento**:
-   ```powershell
-   .\.venv\Scripts\python scripts/seed_manuals.py --force
-   ```
+## 📌 Estado del Proyecto
 
-4. **Iniciar la API FastAPI**:
-   ```powershell
-   .\.venv\Scripts\uvicorn main:app --reload --port 8000
-   ```
-   - Swagger UI: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-
-5. **Ejecutar Pruebas Automatizadas**:
-   ```powershell
-   .\.venv\Scripts\pytest -v
-   ```
+✅ **Terminado** — Proyecto con fines educativos y profesionales abierto a mejoras.
