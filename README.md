@@ -199,7 +199,7 @@ Acceso a documentación interactiva OpenAPI Swagger: [http://127.0.0.1:8000/docs
 
 ## 🧪 Pruebas Automatizadas
 
-El proyecto cuenta con 14 pruebas unitarias y de integración que validan la matriz de prioridad, el enrutador condicional, las alertas simuladas, el fallback de RAG y los endpoints de FastAPI:
+El proyecto cuenta con pruebas unitarias y de integración que validan la matriz de prioridad, el enrutador condicional, las alertas simuladas, el fallback de RAG y los endpoints de FastAPI:
 
 ```powershell
 pytest -v
