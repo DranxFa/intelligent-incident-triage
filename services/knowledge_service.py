@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 from database import KnowledgeManual, get_db_context
 from services.embeddings import get_embedding
 
@@ -29,7 +29,6 @@ def parse_markdown_manuals(file_path: Path = MANUALS_FILE_PATH) -> List[Dict[str
 
         lines = section.splitlines()
         titulo = lines[0].replace("##", "").strip()
-        # Remover numeración inicial si existe (ej. "1. ")
         titulo = re.sub(r"^\d+\.\s*", "", titulo)
 
         categoria = "CONSULTA_OPERATIVA"
@@ -69,7 +68,7 @@ def seed_knowledge_base(force: bool = False) -> int:
     with get_db_context() as db:
         existing_count = db.query(KnowledgeManual).count()
         if existing_count > 0 and not force:
-            logger.info(f"La base de datos ya contiene {existing_count} manuales. Omitiendo seed (usa force=True para sobrescribir).")
+            logger.info(f"La base de datos ya contiene {existing_count} manuales. Omitiendo seed.")
             return existing_count
 
         if force and existing_count > 0:
@@ -95,47 +94,72 @@ def seed_knowledge_base(force: bool = False) -> int:
     return inserted
 
 
-def search_manuals_vector(query_text: str, limit: int = 2) -> List[str]:
+def search_manuals_with_threshold(
+    query_text: str,
+    query_vector: Optional[List[float]] = None,
+    max_distance: float = 0.38,
+    limit: int = 2,
+) -> List[str]:
     """
-    Realiza una búsqueda semántica de los fragmentos más parecidos mediante
-    distancia coseno en pgvector (<=>).
-    Si la base de datos no está disponible, utiliza fallback local del archivo Markdown.
+    Realiza una búsqueda semántica de manuales aplicando un umbral estricto de distancia coseno (<=>).
+    - Distancia <= max_distance (ej. 0.55): Se considera coincidencia válida y se retornan los fragmentos.
+    - Distancia > max_distance: Se considera que no hay manual relevante (retorna lista vacía []).
     """
     try:
-        query_vector = get_embedding(query_text)
+        vector = query_vector or get_embedding(query_text)
 
         with get_db_context() as db:
+            distance_expr = KnowledgeManual.vector_embedding.cosine_distance(vector)
             results = (
-                db.query(KnowledgeManual)
-                .order_by(KnowledgeManual.vector_embedding.cosine_distance(query_vector))
+                db.query(KnowledgeManual, distance_expr.label("distance"))
+                .order_by("distance")
                 .limit(limit)
                 .all()
             )
 
             if results:
-                return [
-                    f"Manual: {r.titulo} [{r.categoria}]\n{r.contenido}"
-                    for r in results
+                # Comprobar si el mejor resultado cumple con el umbral de similitud
+                best_manual, best_distance = results[0]
+                if best_distance > max_distance:
+                    logger.info(
+                        f"Mejor coincidencia ('{best_manual.titulo}') excede umbral de distancia: {best_distance:.4f} > {max_distance}. Fallback a soporte humano."
+                    )
+                    return []
+
+                # Filtrar fragmentos que cumplan el umbral
+                valid_fragments = [
+                    f"Manual: {manual.titulo} [{manual.categoria}]\n{manual.contenido}"
+                    for manual, dist in results
+                    if dist <= max_distance
                 ]
+                return valid_fragments
+
     except Exception as exc:
         logger.warning(
-            f"Consulta a pgvector no disponible ({exc}). Usando fallback de búsqueda en archivo Markdown."
+            f"Consulta a pgvector no disponible ({exc}). Usando fallback de archivo Markdown."
         )
 
-    # Fallback en caso de que PostgreSQL aún no esté iniciado
+    # Fallback local usando el archivo Markdown con filtro de coincidencia de palabras
     try:
         manuals = parse_markdown_manuals()
         words = set(query_text.lower().split())
         scored = []
         for m in manuals:
             content_lower = f"{m['titulo']} {m['contenido']}".lower()
-            score = sum(1 for w in words if w in content_lower)
-            scored.append((score, f"Manual: {m['titulo']} [{m['categoria']}]\n{m['contenido']}"))
+            score = sum(1 for w in words if len(w) > 3 and w in content_lower)
+            if score > 0:
+                scored.append((score, f"Manual: {m['titulo']} [{m['categoria']}]\n{m['contenido']}"))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [text for _, text in scored[:limit]]
     except Exception:
-        return [
-            "Manual estándar de soporte técnico: Verifique conexiones y permisos.",
-            "Manual de procedimientos de TI: Valide con su administrador de sistemas.",
-        ]
+        return []
+
+
+def search_manuals_vector(query_text: str, limit: int = 2) -> List[str]:
+    """Compatibilidad hacia atrás con búsqueda sin umbral."""
+    res = search_manuals_with_threshold(query_text, limit=limit, max_distance=1.0)
+    return res if res else [
+        "Manual de soporte técnico: Verifique conexiones y permisos.",
+        "Manual de procedimientos de TI: Valide con su administrador de sistemas.",
+    ]

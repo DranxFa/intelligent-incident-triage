@@ -45,7 +45,9 @@ async def test_submit_incident_form(sample_analysis):
     mock_result_state = {
         "texto_original": form_data,
         "triage_data": sample_analysis,
+        "accion_ia": "SUGERENCIA_RAG",
         "alert_sent": False,
+        "alert_payload": None,
         "rag_context": ["Fragmento 1: Manual de contraseñas", "Fragmento 2: Autoservicio VPN"],
         "final_response": "Solución sugerida: ingrese a portal de autoservicio.",
         "error": None,
@@ -66,6 +68,7 @@ async def test_submit_incident_form(sample_analysis):
     assert json_resp["texto_original"]["usuario"] == form_data["usuario"]
     assert json_resp["triage_data"]["categoria"] == "ACCESOS_Y_SEGURIDAD"
     assert json_resp["triage_data"]["prioridad"] == "P4"
+    assert json_resp["accion_ia"] == "SUGERENCIA_RAG"
     assert json_resp["alert_sent"] is False
     assert len(json_resp["rag_context"]) == 2
     assert "Solución sugerida" in json_resp["final_response"]
@@ -94,16 +97,30 @@ async def test_submit_incident_json(sample_analysis):
         "usuario": "admin_checkout",
     }
 
+    alert_payload = {
+        "alert_message": "🚨 ALERTA P1: Pasarela de pagos caída. SLA: 2 horas. Responsable: Turno de guardia.",
+        "resumen": "Pasarela de pagos caída",
+        "sla_horas": 2,
+        "categoria": "INFRAESTRUCTURA_RED",
+        "usuario": "admin_checkout",
+        "titulo": "Pasarela de pagos caída",
+        "descripcion": "Error crítico al procesar tarjetas de crédito.",
+    }
+
     mock_result_state = {
         "texto_original": json_data,
         "triage_data": sample_analysis,
+        "accion_ia": "ALERTA_P1",
         "alert_sent": True,
+        "alert_payload": alert_payload,
         "rag_context": None,
         "final_response": "🚨 ALERTA P1: Pasarela de pagos caída. SLA: 2 horas. Responsable: Turno de guardia.",
         "error": None,
     }
 
-    with patch("main.triage_graph.ainvoke", new_callable=AsyncMock) as mock_graph:
+    with patch("main.triage_graph.ainvoke", new_callable=AsyncMock) as mock_graph, patch(
+        "main.dispatch_alert_notifications"
+    ) as mock_dispatch:
         mock_graph.return_value = mock_result_state
 
         async with AsyncClient(
@@ -111,9 +128,13 @@ async def test_submit_incident_json(sample_analysis):
         ) as ac:
             response = await ac.post("/incidents/json", json=json_data)
 
+        # BackgroundTasks ejecuta la función al finalizar el ciclo de respuesta
+        mock_dispatch.assert_called_once_with(alert_payload)
+
     assert response.status_code == 201
     json_resp = response.json()
     assert json_resp["status"] == "processed"
     assert json_resp["texto_original"] == json_data
+    assert json_resp["accion_ia"] == "ALERTA_P1"
     assert json_resp["alert_sent"] is True
     assert "🚨 ALERTA P1" in json_resp["final_response"]

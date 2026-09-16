@@ -117,7 +117,10 @@ def test_conditional_router_decisions():
 
 @pytest.mark.anyio
 async def test_workflow_ruta_a_p1_alert():
-    """Valida la ejecución completa de la Ruta A (alerta Webhook P1)."""
+    """Valida la ejecución completa de la Ruta A (alerta Webhook P1 y concurrencia)."""
+    from unittest.mock import AsyncMock
+    from graph.nodes.alert import dispatch_alert_notifications
+
     mock_analysis = IncidentAnalysis(
         categoria=CategoryEnum.INFRAESTRUCTURA_RED,
         impacto=ImpactoEnum.ALTO,
@@ -129,14 +132,18 @@ async def test_workflow_ruta_a_p1_alert():
     )
 
     mock_structured_llm = MagicMock()
-    mock_structured_llm.invoke.return_value = mock_analysis
+    mock_structured_llm.ainvoke = AsyncMock(return_value=mock_analysis)
 
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value = mock_structured_llm
 
+    dummy_vector = [0.05] * 768
+
     with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
+        "graph.nodes.classifier.get_embedding", return_value=dummy_vector
+    ), patch(
         "graph.nodes.persist.persist_incident_and_state", return_value=101
-    ), patch("graph.nodes.alert.httpx.post") as mock_http, patch("graph.nodes.alert.smtplib.SMTP"):
+    ):
         state_input = {
             "texto_original": {
                 "titulo": "Pasarela de pagos caída",
@@ -144,7 +151,10 @@ async def test_workflow_ruta_a_p1_alert():
                 "usuario": "admin_checkout",
             },
             "triage_data": None,
+            "vector_embedding": None,
+            "accion_ia": None,
             "alert_sent": False,
+            "alert_payload": None,
             "rag_context": None,
             "final_response": None,
             "incident_id": None,
@@ -156,6 +166,9 @@ async def test_workflow_ruta_a_p1_alert():
         assert result["triage_data"] is not None
         assert result["triage_data"].prioridad == PriorityEnum.P1
         assert result["alert_sent"] is True
+        assert result["accion_ia"] == "ALERTA_P1"
+        assert result["alert_payload"] is not None
+        assert result["alert_payload"]["resumen"] == "Pasarela de pagos caída"
         assert result["rag_context"] is None
         assert "🚨 ALERTA P1" in result["final_response"]
         assert "SLA: 2 horas" in result["final_response"]
@@ -163,8 +176,55 @@ async def test_workflow_ruta_a_p1_alert():
 
 
 @pytest.mark.anyio
-async def test_workflow_ruta_b_rag():
-    """Valida la ejecución de la Ruta B (recuperación de manuales y solución con RAG)."""
+async def test_dispatch_alert_notifications():
+    """Valida la función independiente dispatch_alert_notifications (ejecutada en BackgroundTasks)."""
+    from graph.nodes.alert import dispatch_alert_notifications
+
+    alert_payload = {
+        "alert_message": "🚨 ALERTA P1: Core switch sin respuesta. SLA: 2 horas.",
+        "resumen": "Core switch sin respuesta",
+        "sla_horas": 2,
+        "categoria": "INFRAESTRUCTURA_RED",
+        "usuario": "noc_operator",
+        "titulo": "Core switch sin respuesta",
+        "descripcion": "Tráfico detenido en datacenter",
+    }
+
+    env_vars = {
+        "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/mocked/test",
+        "TELEGRAM_BOT_TOKEN": "mock_token",
+        "TELEGRAM_CHAT_ID": "123456",
+        "SMTP_HOST": "smtp.example.com",
+        "SMTP_PORT": "587",
+        "SMTP_USER": "admin@example.com",
+        "SMTP_PASSWORD": "password",
+        "ALERT_EMAIL_TO": "guardia@example.com",
+    }
+
+    with patch.dict("os.environ", env_vars), patch(
+        "graph.nodes.alert.httpx.post"
+    ) as mock_http, patch("graph.nodes.alert.smtplib.SMTP") as mock_smtp:
+        mock_http_response = MagicMock()
+        mock_http_response.raise_for_status.return_value = None
+        mock_http.return_value = mock_http_response
+
+        mock_smtp_inst = MagicMock()
+        mock_smtp.return_value.__enter__.return_value = mock_smtp_inst
+
+        channels = dispatch_alert_notifications(alert_payload)
+
+        assert "Discord" in channels
+        assert "Telegram" in channels
+        assert "Outlook/Correo" in channels
+        assert mock_http.call_count == 2
+        assert mock_smtp_inst.send_message.call_count == 1
+
+
+@pytest.mark.anyio
+async def test_workflow_ruta_b_rag_match():
+    """Valida la Ruta B cuando SÍ existen manuales pertinentes (accion_ia = SUGERENCIA_RAG)."""
+    from unittest.mock import AsyncMock
+
     mock_analysis = IncidentAnalysis(
         categoria=CategoryEnum.CONSULTA_OPERATIVA,
         impacto=ImpactoEnum.BAJO,
@@ -176,24 +236,27 @@ async def test_workflow_ruta_b_rag():
     )
 
     mock_structured_llm = MagicMock()
-    mock_structured_llm.invoke.return_value = mock_analysis
+    mock_structured_llm.ainvoke = AsyncMock(return_value=mock_analysis)
 
     mock_rag_response = MagicMock()
     mock_rag_response.content = "Para exportar a Excel, diríjase a Reportes Contables > Exportar > XLSX."
 
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value = mock_structured_llm
-    mock_llm.invoke.return_value = mock_rag_response
+    mock_llm.ainvoke = AsyncMock(return_value=mock_rag_response)
 
     mock_fragments = [
         "Manual: Procedimiento ERP Facturación y Reportes [SOFTWARE_APLICACIONES]\nExportar reportes.",
         "Manual: Guía de exportación [CONSULTA_OPERATIVA]\nPaso a paso.",
     ]
+    dummy_vector = [0.05] * 768
 
     with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
+        "graph.nodes.classifier.get_embedding", return_value=dummy_vector
+    ), patch(
         "graph.nodes.rag.get_llm", return_value=mock_llm
     ), patch(
-        "graph.nodes.rag.search_manuals_vector", return_value=mock_fragments
+        "graph.nodes.rag.search_manuals_with_threshold", return_value=mock_fragments
     ), patch(
         "graph.nodes.persist.persist_incident_and_state", return_value=102
     ):
@@ -204,7 +267,10 @@ async def test_workflow_ruta_b_rag():
                 "usuario": "usuario_contabilidad",
             },
             "triage_data": None,
+            "vector_embedding": None,
+            "accion_ia": None,
             "alert_sent": False,
+            "alert_payload": None,
             "rag_context": None,
             "final_response": None,
             "incident_id": None,
@@ -215,6 +281,7 @@ async def test_workflow_ruta_b_rag():
 
         assert result["triage_data"].requiere_rag is True
         assert result["alert_sent"] is False
+        assert result["accion_ia"] == "SUGERENCIA_RAG"
         assert result["rag_context"] is not None
         assert len(result["rag_context"]) == 2
         assert "Para exportar a Excel" in result["final_response"]
@@ -222,8 +289,67 @@ async def test_workflow_ruta_b_rag():
 
 
 @pytest.mark.anyio
+async def test_workflow_ruta_b_rag_fallback_to_human():
+    """Valida la Ruta B cuando NO hay manuales pertinentes (distancia > 0.55 -> ESCALADO_A_HUMANO)."""
+    from unittest.mock import AsyncMock
+
+    mock_analysis = IncidentAnalysis(
+        categoria=CategoryEnum.CONSULTA_OPERATIVA,
+        impacto=ImpactoEnum.BAJO,
+        urgencia=UrgenciaEnum.BAJA,
+        prioridad=PriorityEnum.P4,
+        sla_horas=48,
+        resumen_ejecutivo="Consulta atípica sin manual de referencia",
+        requiere_rag=True,
+    )
+
+    mock_structured_llm = MagicMock()
+    mock_structured_llm.ainvoke = AsyncMock(return_value=mock_analysis)
+
+    mock_llm = MagicMock()
+    mock_llm.with_structured_output.return_value = mock_structured_llm
+
+    dummy_vector = [0.05] * 768
+
+    # search_manuals_with_threshold retorna lista vacía cuando la distancia > 0.55
+    with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
+        "graph.nodes.classifier.get_embedding", return_value=dummy_vector
+    ), patch(
+        "graph.nodes.rag.search_manuals_with_threshold", return_value=[]
+    ), patch(
+        "graph.nodes.persist.persist_incident_and_state", return_value=105
+    ):
+        state_input = {
+            "texto_original": {
+                "titulo": "¿Cómo configurar un clúster cuántico con superconductores?",
+                "descripcion": "Requiero manual sobre configuración cuántica en terminales.",
+                "usuario": "investigador_dr",
+            },
+            "triage_data": None,
+            "vector_embedding": None,
+            "accion_ia": None,
+            "alert_sent": False,
+            "alert_payload": None,
+            "rag_context": None,
+            "final_response": None,
+            "incident_id": None,
+            "error": None,
+        }
+
+        result = await triage_graph.ainvoke(state_input)
+
+        assert result["accion_ia"] == "ESCALADO_A_HUMANO"
+        assert result["rag_context"] is None
+        assert "cola de soporte técnico humano" in result["final_response"]
+        assert "especialista" in result["final_response"]
+        assert result["incident_id"] == 105
+
+
+@pytest.mark.anyio
 async def test_workflow_ruta_c_regular_queue():
     """Valida la ejecución de la Ruta C (cola regular para P2/P3 normal)."""
+    from unittest.mock import AsyncMock
+
     mock_analysis = IncidentAnalysis(
         categoria=CategoryEnum.SOFTWARE_APLICACIONES,
         impacto=ImpactoEnum.MEDIO,
@@ -235,12 +361,15 @@ async def test_workflow_ruta_c_regular_queue():
     )
 
     mock_structured_llm = MagicMock()
-    mock_structured_llm.invoke.return_value = mock_analysis
+    mock_structured_llm.ainvoke = AsyncMock(return_value=mock_analysis)
 
     mock_llm = MagicMock()
     mock_llm.with_structured_output.return_value = mock_structured_llm
+    dummy_vector = [0.05] * 768
 
     with patch("graph.nodes.classifier.get_llm", return_value=mock_llm), patch(
+        "graph.nodes.classifier.get_embedding", return_value=dummy_vector
+    ), patch(
         "graph.nodes.persist.persist_incident_and_state", return_value=103
     ):
         state_input = {
@@ -250,7 +379,10 @@ async def test_workflow_ruta_c_regular_queue():
                 "usuario": "ventas_juan",
             },
             "triage_data": None,
+            "vector_embedding": None,
+            "accion_ia": None,
             "alert_sent": False,
+            "alert_payload": None,
             "rag_context": None,
             "final_response": None,
             "incident_id": None,

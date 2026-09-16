@@ -149,6 +149,43 @@ INCIDENT_TEMPLATES = [
         "descripcion": "¿Cómo programar una respuesta automática de vacaciones en Outlook para remitentes externos?",
         "solucion": "Se remitió el manual interno y se indicó el menú 'Archivo > Respuestas automáticas (Fuera de la oficina)' de Outlook.",
     },
+
+    # CASOS ATÍPICOS / SIN MANUAL (ESCALADO_A_HUMANO)
+    {
+        "categoria": CategoryEnum.CONSULTA_OPERATIVA,
+        "titulo": "Consulta sobre homologación de firma digital en plataforma Sunat",
+        "descripcion": "El área contable consulta cómo validar certificados de firma digital de un nuevo proveedor en la pasarela externa.",
+        "solucion": "Un especialista de soporte fiscal y sistemas se comunicó con el proveedor para validar la compatibilidad del certificado PKCS#12.",
+        "es_escalado": True,
+    },
+    {
+        "categoria": CategoryEnum.SOFTWARE_APLICACIONES,
+        "titulo": "Duda de integración de API bancaria con sistema legado de tesorería",
+        "descripcion": "Se solicita asesoría para actualizar los endpoints SOAP del conector bancario que no están documentados en la wiki interna.",
+        "solucion": "El analista senior de aplicaciones coordinó sesión con el equipo de arquitectura bancaria y actualizó la configuración WSDL.",
+        "es_escalado": True,
+    },
+    {
+        "categoria": CategoryEnum.CONSULTA_OPERATIVA,
+        "titulo": "Solicitud de instalación y licencia de software especializado ArcGIS",
+        "descripcion": "Ingeniero ambiental consulta cómo solicitar licencia de ArcGIS Pro y requisitos para estación de trabajo virtual.",
+        "solucion": "Se gestionó cotización y aprobación con compras TI y se asignó máquina virtual en Azure con GPU dedicada.",
+        "es_escalado": True,
+    },
+    {
+        "categoria": CategoryEnum.CONSULTA_OPERATIVA,
+        "titulo": "Asesoría para recuperación de base de datos Access histórica",
+        "descripcion": "Auditoría interna requiere extraer tablas históricas de un archivo .mdb corrupto sin manual disponible.",
+        "solucion": "El especialista en bases de datos ejecutó herramientas de reparación y exportó la información a PostgreSQL.",
+        "es_escalado": True,
+    },
+    {
+        "categoria": CategoryEnum.ACCESOS_Y_SEGURIDAD,
+        "titulo": "Consulta sobre excepción de firewall para equipo de laboratorio IoT",
+        "descripcion": "Investigador solicita abrir puertos no estándar para prototipo de sensor industrial sin procedimiento estándar.",
+        "solucion": "Oficial de seguridad de la información evaluó riesgos y creó una VLAN aislada con reglas NAT específicas.",
+        "es_escalado": True,
+    },
 ]
 
 USUARIOS_SAMPLE = [
@@ -161,14 +198,17 @@ USUARIOS_SAMPLE = [
 
 def generate_bi_tickets(total_tickets: int = 300) -> int:
     """
-    Genera entre 200 y 400 tickets ficticios realistas distribuidos en los últimos 3 meses:
-    - 80% en estado RESUELTO con resolved_at coherente y tiempo_resolucion calculado.
-      * ~80% de los resueltos cumplieron su SLA.
-      * ~20% de los resueltos superaron su SLA (incumplimiento).
-    - 20% en estado ABIERTO o EN_PROCESO con resolved_at = NULL y tiempo_resolucion = NULL.
+    Genera 300 tickets ficticios realistas con distribución exacta para Power BI:
+    - 4 Acciones de IA:
+      * ALERTA_P1 (~10% = 30 tickets)
+      * SUGERENCIA_RAG (~25% = 75 tickets)
+      * ESCALADO_A_HUMANO (~15% = 45 tickets)
+      * COLA_REGULAR (~50% = 150 tickets)
+    - Estados:
+      * 80% RESUELTO (80% cumplió SLA, 20% venció SLA)
+      * 20% PENDIENTE (60% ABIERTO, 40% EN_PROCESO)
     """
     now = datetime.now(timezone.utc)
-    ninety_days_ago = now - timedelta(days=90)
 
     # Cantidades según porcentajes
     resueltos_count = int(total_tickets * 0.80)
@@ -176,47 +216,82 @@ def generate_bi_tickets(total_tickets: int = 300) -> int:
 
     tickets_data = []
 
-    # 1. Generar los 80% RESUELTOS
-    for _ in range(resueltos_count):
-        template = random.choice(INCIDENT_TEMPLATES)
-        usuario = random.choice(USUARIOS_SAMPLE)
+    # Separar plantillas según tipo
+    escalado_templates = [t for t in INCIDENT_TEMPLATES if t.get("es_escalado")]
+    rag_templates = [
+        t for t in INCIDENT_TEMPLATES 
+        if not t.get("es_escalado") and (
+            t["categoria"] == CategoryEnum.CONSULTA_OPERATIVA or 
+            "SAP" in t["titulo"] or 
+            "impresora" in t["titulo"] or 
+            "contraseña" in t["titulo"] or 
+            "VPN" in t["titulo"] or 
+            "Teams" in t["titulo"] or 
+            "BSOD" in t["titulo"]
+        )
+    ]
+    regular_templates = [t for t in INCIDENT_TEMPLATES if not t.get("es_escalado") and t not in rag_templates]
 
-        # Distribución de prioridades: P1 (10%), P2 (25%), P3 (45%), P4 (20%)
-        p_rand = random.random()
-        if p_rand < 0.10:
+    def choose_action_and_template(is_resolved: bool):
+        # Distribución: P1 (10%), RAG (25%), ESCALADO (15%), COLA_REGULAR (50%)
+        r = random.random()
+        if r < 0.10:
+            accion_ia = "ALERTA_P1"
             prioridad = PriorityEnum.P1
-        elif p_rand < 0.35:
-            prioridad = PriorityEnum.P2
-        elif p_rand < 0.80:
-            prioridad = PriorityEnum.P3
+            template = random.choice([t for t in INCIDENT_TEMPLATES if t["categoria"] in (CategoryEnum.INFRAESTRUCTURA_RED, CategoryEnum.SOFTWARE_APLICACIONES)])
+        elif r < 0.35:
+            accion_ia = "SUGERENCIA_RAG"
+            p_rand = random.random()
+            prioridad = PriorityEnum.P4 if p_rand < 0.70 else PriorityEnum.P3
+            template = random.choice(rag_templates)
+        elif r < 0.50:
+            accion_ia = "ESCALADO_A_HUMANO"
+            p_rand = random.random()
+            prioridad = PriorityEnum.P4 if p_rand < 0.60 else (PriorityEnum.P3 if p_rand < 0.90 else PriorityEnum.P2)
+            template = random.choice(escalado_templates)
         else:
-            prioridad = PriorityEnum.P4
+            accion_ia = "COLA_REGULAR"
+            p_rand = random.random()
+            if p_rand < 0.30:
+                prioridad = PriorityEnum.P2
+            elif p_rand < 0.80:
+                prioridad = PriorityEnum.P3
+            else:
+                prioridad = PriorityEnum.P4
+            template = random.choice(regular_templates)
+
+        return accion_ia, prioridad, template
+
+    # 1. Generar los 80% RESUELTOS (240 tickets)
+    for _ in range(resueltos_count):
+        usuario = random.choice(USUARIOS_SAMPLE)
+        accion_ia, prioridad, template = choose_action_and_template(is_resolved=True)
 
         sla_horas = SLA_HOURS_MAP[prioridad]
         sla_minutos = sla_horas * 60
 
-        # Fecha de creación aleatoria entre hace 90 días y hace 2 días
+        # Fecha de creación entre hace 90 días y hace 2 días
         days_offset = random.uniform(2, 88)
         created_at = now - timedelta(days=days_offset, hours=random.randint(0, 23), minutes=random.randint(0, 59))
 
-        # Cumplimiento del SLA: 80% cumple SLA, 20% se pasa del tiempo límite
+        # 80% cumple SLA, 20% se pasa del tiempo límite
         cumplio_sla = random.random() < 0.80
 
         if cumplio_sla:
-            # Tiempo de resolución menor o igual al SLA (ej. entre 20% y 95% del SLA)
             duration_minutes = max(15, int(sla_minutos * random.uniform(0.20, 0.95)))
         else:
-            # Tiempo de resolución que excede el SLA (ej. entre 1.1x y 2.5x del SLA)
-            duration_minutes = int(sla_minutos * random.uniform(1.15, 2.80))
+            duration_minutes = int(sla_minutos * random.uniform(1.15, 2.70))
 
         resolved_at = created_at + timedelta(minutes=duration_minutes)
 
-        if prioridad == PriorityEnum.P1:
-            accion_ia = "ALERTA_P1"
-        elif template["categoria"] == CategoryEnum.CONSULTA_OPERATIVA or "SAP" in template["titulo"] or "impresora" in template["titulo"]:
-            accion_ia = "SUGERENCIA_RAG"
+        if accion_ia == "ALERTA_P1":
+            solucion = f"Resolución de emergencia: {template['solucion']}"
+        elif accion_ia == "SUGERENCIA_RAG":
+            solucion = template["solucion"]
+        elif accion_ia == "ESCALADO_A_HUMANO":
+            solucion = f"Atendido por especialista humano: {template['solucion']}"
         else:
-            accion_ia = "COLA_REGULAR"
+            solucion = template["solucion"]
 
         tickets_data.append({
             "usuario": usuario,
@@ -230,23 +305,13 @@ def generate_bi_tickets(total_tickets: int = 300) -> int:
             "created_at": created_at,
             "resolved_at": resolved_at,
             "tiempo_resolucion": duration_minutes,
-            "solucion_sugerida": template["solucion"],
+            "solucion_sugerida": solucion,
         })
 
-    # 2. Generar los 20% ABIERTOS / EN_PROCESO
+    # 2. Generar los 20% ABIERTOS / EN_PROCESO (60 tickets)
     for _ in range(abiertos_count):
-        template = random.choice(INCIDENT_TEMPLATES)
         usuario = random.choice(USUARIOS_SAMPLE)
-
-        p_rand = random.random()
-        if p_rand < 0.10:
-            prioridad = PriorityEnum.P1
-        elif p_rand < 0.35:
-            prioridad = PriorityEnum.P2
-        elif p_rand < 0.80:
-            prioridad = PriorityEnum.P3
-        else:
-            prioridad = PriorityEnum.P4
+        accion_ia, prioridad, template = choose_action_and_template(is_resolved=False)
 
         sla_horas = SLA_HOURS_MAP[prioridad]
 
@@ -257,12 +322,14 @@ def generate_bi_tickets(total_tickets: int = 300) -> int:
         # 60% Abiertos, 40% En Proceso
         estado = "EN_PROCESO" if random.random() < 0.40 else "ABIERTO"
 
-        if prioridad == PriorityEnum.P1:
-            accion_ia = "ALERTA_P1"
-        elif template["categoria"] == CategoryEnum.CONSULTA_OPERATIVA or "SAP" in template["titulo"] or "impresora" in template["titulo"]:
-            accion_ia = "SUGERENCIA_RAG"
+        if accion_ia == "ESCALADO_A_HUMANO":
+            solucion_sugerida = "Caso derivado a soporte técnico humano especializado. Pendiente de asignación."
+        elif accion_ia == "SUGERENCIA_RAG":
+            solucion_sugerida = template["solucion"]
+        elif accion_ia == "ALERTA_P1":
+            solucion_sugerida = "🚨 ALERTA P1: Incidente crítico en proceso de mitigación por turno de guardia."
         else:
-            accion_ia = "COLA_REGULAR"
+            solucion_sugerida = None
 
         tickets_data.append({
             "usuario": usuario,
@@ -276,7 +343,7 @@ def generate_bi_tickets(total_tickets: int = 300) -> int:
             "created_at": created_at,
             "resolved_at": None,
             "tiempo_resolucion": None,
-            "solucion_sugerida": template["solucion"] if estado == "EN_PROCESO" else None,
+            "solucion_sugerida": solucion_sugerida,
         })
 
     # Mezclar aleatoriamente el orden

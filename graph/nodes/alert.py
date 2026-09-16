@@ -3,41 +3,31 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import List
 import httpx
 from graph.state import IncidentGraphState
 
 logger = logging.getLogger("incident_triage.alert")
 
 
-def send_p1_alert(state: IncidentGraphState) -> dict:
+def dispatch_alert_notifications(alert_payload: dict) -> List[str]:
     """
-    Ruta A: Se activa si la prioridad es P1.
-    Envía una notificación formateada mediante:
+    Función independiente de despacho de alertas P1 ejecutada en segundo plano
+    (FastAPI BackgroundTasks o worker asíncrono).
+    Envía notificaciones a:
     1. Discord Webhook
     2. Telegram Bot
     3. Correo Empresarial Outlook / Office 365 o Gmail (vía SMTP nativo)
-    4. Webhook genérico
+    4. Webhook genérico de respaldo
     """
-    triage = state.get("triage_data")
-    texto_orig = state.get("texto_original") or {}
+    alert_message = alert_payload.get("alert_message", "")
+    resumen = alert_payload.get("resumen", "")
+    sla_horas = alert_payload.get("sla_horas", 2)
+    categoria = alert_payload.get("categoria", "INFRAESTRUCTURA_RED")
+    usuario = alert_payload.get("usuario", "desconocido")
+    titulo = alert_payload.get("titulo", "")
+    descripcion = alert_payload.get("descripcion", "")
 
-    resumen = (
-        triage.resumen_ejecutivo
-        if triage
-        else texto_orig.get("titulo", "Incidente Crítico")
-    )
-    sla_horas = triage.sla_horas if triage else 2
-    categoria = triage.categoria.value if triage else "INFRAESTRUCTURA_RED"
-    usuario = texto_orig.get("usuario", "desconocido")
-    titulo = texto_orig.get("titulo", "")
-    descripcion = texto_orig.get("descripcion", "")
-
-    # Mensaje formateado según requerimiento
-    alert_message = (
-        f"🚨 ALERTA P1: {resumen}. SLA: {sla_horas} horas. Responsable: Turno de guardia."
-    )
-
-    alert_sent = False
     delivery_channels = []
 
     # Variables de entorno
@@ -60,8 +50,8 @@ def send_p1_alert(state: IncidentGraphState) -> dict:
                 timeout=5.0,
             )
             res.raise_for_status()
-            alert_sent = True
             delivery_channels.append("Discord")
+            logger.info("Alerta P1 enviada a Discord exitosamente.")
         except Exception as exc:
             logger.error(f"Falla al enviar a Discord: {exc}")
 
@@ -75,8 +65,8 @@ def send_p1_alert(state: IncidentGraphState) -> dict:
                 timeout=5.0,
             )
             res.raise_for_status()
-            alert_sent = True
             delivery_channels.append("Telegram")
+            logger.info("Alerta P1 enviada a Telegram exitosamente.")
         except Exception as exc:
             logger.error(f"Falla al enviar a Telegram: {exc}")
 
@@ -116,8 +106,8 @@ def send_p1_alert(state: IncidentGraphState) -> dict:
                 server.login(smtp_user, smtp_password)
                 server.send_message(msg)
 
-            alert_sent = True
             delivery_channels.append("Outlook/Correo")
+            logger.info(f"Alerta P1 enviada por correo SMTP a {email_to} exitosamente.")
         except Exception as exc:
             logger.error(f"Falla al enviar correo SMTP a {email_to}: {exc}")
 
@@ -135,21 +125,55 @@ def send_p1_alert(state: IncidentGraphState) -> dict:
                 timeout=5.0,
             )
             res.raise_for_status()
-            alert_sent = True
             delivery_channels.append("Webhook Genérico")
         except Exception as exc:
             logger.error(f"Falla en webhook genérico: {exc}")
 
-    # Si no se configuró ningún canal real, registrar simulación sin fallar
     if not delivery_channels:
-        alert_sent = True
         delivery_channels.append("Simulación interna")
 
-    canal_str = ", ".join(delivery_channels)
+    return delivery_channels
+
+
+def send_p1_alert(state: IncidentGraphState) -> dict:
+    """
+    Ruta A: Se activa si la prioridad es P1.
+    Prepara los datos estructurados de alerta para ser despachados en segundo plano
+    mediante FastAPI BackgroundTasks sin bloquear la respuesta inmediata al usuario.
+    """
+    triage = state.get("triage_data")
+    texto_orig = state.get("texto_original") or {}
+
+    resumen = (
+        triage.resumen_ejecutivo
+        if triage
+        else texto_orig.get("titulo", "Incidente Crítico")
+    )
+    sla_horas = triage.sla_horas if triage else 2
+    categoria = triage.categoria.value if triage else "INFRAESTRUCTURA_RED"
+    usuario = texto_orig.get("usuario", "desconocido")
+    titulo = texto_orig.get("titulo", "")
+    descripcion = texto_orig.get("descripcion", "")
+
+    alert_message = (
+        f"🚨 ALERTA P1: {resumen}. SLA: {sla_horas} horas. Responsable: Turno de guardia."
+    )
+
+    alert_payload = {
+        "alert_message": alert_message,
+        "resumen": resumen,
+        "sla_horas": sla_horas,
+        "categoria": categoria,
+        "usuario": usuario,
+        "titulo": titulo,
+        "descripcion": descripcion,
+    }
 
     return {
-        "alert_sent": alert_sent,
+        "alert_sent": True,
+        "accion_ia": "ALERTA_P1",
+        "alert_payload": alert_payload,
         "rag_context": None,
-        "final_response": f"[{canal_str}] {alert_message}",
+        "final_response": alert_message,
         "error": None,
     }

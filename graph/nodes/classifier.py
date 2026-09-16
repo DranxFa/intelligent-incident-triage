@@ -1,7 +1,9 @@
+import asyncio
 from langchain_core.messages import HumanMessage, SystemMessage
 from graph.llm import get_llm
 from graph.state import IncidentGraphState
 from schemas import IncidentAnalysis, calculate_priority_and_sla
+from services.embeddings import get_embedding
 
 SYSTEM_PROMPT = """Eres un sistema experto en triaje y clasificación automatizada de incidentes de TI y soporte operacional.
 Tu labor es analizar minuciosamente el reporte de incidencia y devolver un JSON estructurado con la clasificación exacta.
@@ -45,10 +47,13 @@ CRITERIOS DE CLASIFICACIÓN:
 """
 
 
-def classify_incident(state: IncidentGraphState) -> dict:
+async def classify_incident(state: IncidentGraphState) -> dict:
     """
-    Primer nodo del grafo: analiza los datos del incidente con un LLM y
-    devuelve la clasificación estructurada en triage_data.
+    Primer nodo del grafo:
+    Ejecuta concurrentemente con asyncio.gather:
+    1. La clasificación estructurada del LLM (Gemini / Groq).
+    2. La generación del vector embedding (768 dimensiones).
+    Esto reduce drásticamente la latencia de respuesta en producción.
     """
     texto_orig = state.get("texto_original") or {}
     titulo = texto_orig.get("titulo") or state.get("titulo", "")
@@ -72,9 +77,15 @@ Devuelve la clasificación estructurada según los criterios establecidos.
         HumanMessage(content=user_prompt),
     ]
 
-    analysis: IncidentAnalysis = structured_llm.invoke(messages)
+    text_to_embed = f"{titulo}. {descripcion}".strip()
 
-    # Garantizar determinismo en Prioridad y SLA según la matriz 3x3 acordada
+    # Ejecución paralela de clasificación y generación de vector
+    analysis, vector = await asyncio.gather(
+        structured_llm.ainvoke(messages),
+        asyncio.to_thread(get_embedding, text_to_embed),
+    )
+
+    # Garantizar determinismo en Prioridad y SLA según la matriz 3x3
     prioridad_calculada, sla_calculado = calculate_priority_and_sla(
         analysis.impacto, analysis.urgencia
     )
@@ -83,5 +94,6 @@ Devuelve la clasificación estructurada según los criterios establecidos.
 
     return {
         "triage_data": analysis,
+        "vector_embedding": vector,
         "error": None,
     }

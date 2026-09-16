@@ -26,20 +26,24 @@ def persist_incident_and_state(state: IncidentGraphState) -> Optional[int]:
     rag_context = state.get("rag_context")
 
     # Determinar acción tomada por la IA (triaje)
-    if alert_sent:
-        accion_ia = "ALERTA_P1"
-    elif rag_context:
-        accion_ia = "SUGERENCIA_RAG"
-    else:
-        accion_ia = "COLA_REGULAR"
+    accion_ia = state.get("accion_ia")
+    if not accion_ia:
+        if alert_sent:
+            accion_ia = "ALERTA_P1"
+        elif rag_context:
+            accion_ia = "SUGERENCIA_RAG"
+        else:
+            accion_ia = "COLA_REGULAR"
 
     # Todo ticket recién ingresado al sistema inicia en estado ABIERTO
     estado = "ABIERTO"
 
     try:
-        # Calcular vector embedding del problema para búsqueda y analítica semántica
-        text_for_embedding = f"{titulo}. {descripcion}"
-        incident_vector = get_embedding(text_for_embedding)
+        # Reutilizar el vector embedding precalculado en paralelo por classify_incident
+        incident_vector = state.get("vector_embedding")
+        if incident_vector is None:
+            text_for_embedding = f"{titulo}. {descripcion}"
+            incident_vector = get_embedding(text_for_embedding)
 
         with get_db_context() as db:
             # 1. Registro en la tabla operativa para Power BI
